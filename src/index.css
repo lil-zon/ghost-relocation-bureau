@@ -1,0 +1,63 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-surface: #10131a;
+  --color-panel: #171c25;
+  --color-raised: #1e242f;
+  --color-line: #2a3140;
+  --color-ink: #e6eaf2;
+  --color-muted: #94a0b5;
+  --color-accent: #7cc7ff;
+  --color-ok: #5fd08a;
+  --color-warn: #efc05a;
+  --color-danger: #f0797c;
+
+  --font-sans:
+    'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+html {
+  height: 100%;
+}
+
+/*
+ * Именно min-height, а не height: при height: 100% тело документа остаётся
+ * высотой в один экран, из-за чего sticky-шапка отрывается при прокрутке,
+ * а фон не растягивается на весь контент.
+ */
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ненавязчивый акцент: узкая полоса «тумана» под шапкой, без анимаций. */
+.masthead {
+  background:
+    linear-gradient(180deg, rgba(124, 199, 255, 0.06), transparent 70%),
+    var(--color-panel);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+}
