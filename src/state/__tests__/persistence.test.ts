@@ -15,7 +15,7 @@ describe('хранилище состояния', () => {
     const result = loadState()
     expect(result.kind).toBe('loaded')
     if (result.kind !== 'loaded') return
-    expect(result.bureau.ghosts).toHaveLength(8)
+    expect(result.bureau.ghosts).toHaveLength(11)
   })
 
   it('пустое хранилище — это не ошибка', () => {

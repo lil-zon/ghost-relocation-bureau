@@ -78,7 +78,7 @@ function UnplacedPanel({
                     </div>
                     <div className="text-[11px] text-muted">
                       {residents.length > 0
-                        ? `Сейчас здесь: ${residents.map((item) => item.name).join(', ')}. Освободите место у одной из этих заявок, чтобы разместить «${ghost.name}».`
+                        ? `Сейчас здесь: ${residents.map((item) => item.name).join(', ')}. Освободите ${residents.length === 1 ? 'это место' : 'место у одной из этих заявок'}, чтобы разместить «${ghost.name}».`
                         : 'Место занято жильцами не из текущего реестра.'}
                     </div>
                   </div>

@@ -50,11 +50,14 @@ describe('итоговая сводка', () => {
     const { state } = assignAll(createDemoState(NOW), NOW)
     const report = buildReport(state, NOW)
 
-    expect(report.total).toBe(8)
-    expect(report.assigned).toBe(6)
-    expect(report.assignedAuto).toBe(6)
+    expect(report.total).toBe(11)
+    expect(report.assigned).toBe(8)
+    expect(report.assignedAuto).toBe(7)
+    expect(report.assignedManual).toBe(1)
     expect(report.unassignable).toBe(2)
-    expect(report.overdueTotal).toBe(1)
+    expect(report.awaitingCapacity).toBe(1)
+    // Просрочены двое: Марфа без места и Аркадий с местом, которое требует пересмотра.
+    expect(report.overdueTotal).toBe(2)
     expect(report.overdueUnplaced).toBe(1)
     expect(report.averageScore).not.toBeNull()
     expect(report.averageScore!).toBeGreaterThan(50)
@@ -63,7 +66,7 @@ describe('итоговая сводка', () => {
     expect(report.totalOccupancy).toBe(
       state.locations.reduce((sum, location) => sum + location.currentOccupancy, 0),
     )
-    // Изначально в особняке уже жили двое, поэтому занятость больше числа назначений.
+    // Прежних жильцов не из реестра трое: двое в особняке и один в театре.
     expect(report.totalOccupancy).toBe(report.assigned + 3)
   })
 

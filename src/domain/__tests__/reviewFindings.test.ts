@@ -276,21 +276,74 @@ describe('разбор «места нет» не повторяет общую 
 })
 
 describe('демонстрационный набор после исправлений', () => {
-  it('распределение сохраняет прежний результат и различает причины отказа', () => {
+  it('распределение различает причины отказа', () => {
     const { state, entries } = assignAll(createDemoState(NOW), NOW)
     const report = buildReport(state, NOW)
 
-    expect(report.assigned).toBe(6)
-    expect(report.assignedAuto).toBe(6)
+    expect(report.total).toBe(11)
+    expect(report.assigned).toBe(8)
+    expect(report.assignedAuto).toBe(7)
+    expect(report.assignedManual).toBe(1)
     expect(report.averageScore).toBe(92)
-    expect(report.needsReview).toBe(0)
 
-    // Обе неразмещённые заявки упираются в условия, а не в нехватку мест.
     expect(report.unassignable).toBe(2)
-    expect(report.awaitingCapacity).toBe(0)
     expect(
       entries.filter((entry) => entry.unplacedReason === 'unassignable').map((e) => e.ghostId).sort(),
     ).toEqual(['g-kalcifer', 'g-marfa'])
+  })
+
+  /**
+   * Замечание третьего ревью: набор показывал только «размещена» и «переселение
+   * невозможно», а два состояния были видны лишь при ручной подмене сохранённого
+   * состояния. Тесты ниже фиксируют, что теперь они достижимы штатным прогоном.
+   */
+  it('состояние «ждёт свободного места» видно на демо-наборе', () => {
+    const { state, entries } = assignAll(createDemoState(NOW), NOW)
+    const report = buildReport(state, NOW)
+
+    expect(report.awaitingCapacity).toBe(1)
+
+    // Прохору подходит только склеп, и его заняла Тина — с более близким сроком.
+    const prokhor = findGhost(state, 'g-prokhor')!
+    expect(prokhor.status).toBe('awaiting_capacity')
+    expect(findGhost(state, 'g-tina')!.assignedLocationId).toBe('loc-crypt')
+
+    const entry = entries.find((item) => item.ghostId === 'g-prokhor')!
+    expect(entry.unplacedReason).toBe('awaiting_capacity')
+    expect(entry.explanation!.blockedByCapacity.map((match) => match.locationId)).toEqual([
+      'loc-crypt',
+    ])
+  })
+
+  it('состояние «размещение требует пересмотра» видно на демо-наборе', () => {
+    const { state } = assignAll(createDemoState(NOW), NOW)
+    const report = buildReport(state, NOW)
+
+    expect(report.needsReview).toBe(1)
+
+    // Решение оператора автопрогон не трогает, но срок у него уже истёк.
+    const arkady = findGhost(state, 'g-arkady')!
+    expect(arkady.assignedLocationId).toBe('loc-theatre')
+    expect(arkady.assignmentSource).toBe('manual')
+
+    const row = report.assignedRows.find((item) => item.ghostId === 'g-arkady')!
+    expect(row.needsReview).toBe(true)
+    expect(row.score).toBe(0)
+    expect(row.blocking[0].code).toBe('deadline_expired')
+
+    // Карточка показывает ровно то же значение, что и сводка.
+    const card = explainExistingAssignment(arkady, findLocation(state, 'loc-theatre')!, NOW)
+    expect(card.score).toBe(row.score)
+  })
+
+  it('счётчики просроченных различаются на демо-наборе, а не совпадают случайно', () => {
+    const { state } = assignAll(createDemoState(NOW), NOW)
+    const report = buildReport(state, NOW)
+
+    // Марфа без места и Аркадий с местом — оба просрочены, но подпись к плитке
+    // «без места» должна считать только первую.
+    expect(report.overdueTotal).toBe(2)
+    expect(report.overdueUnplaced).toBe(1)
   })
 })
 

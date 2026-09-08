@@ -11,11 +11,13 @@ describe('reducer приложения', () => {
   it('автоматическое распределение обновляет реестр и сообщает итог', () => {
     const next = appReducer(demoState(), { type: 'assign_all' })
 
-    expect(next.bureau.ghosts.filter((ghost) => ghost.assignedLocationId !== null)).toHaveLength(6)
+    expect(next.bureau.ghosts.filter((ghost) => ghost.assignedLocationId !== null)).toHaveLength(8)
     expect(next.lastRun).not.toBeNull()
     expect(next.notice?.kind).toBe('warning')
-    expect(next.notice?.message).toContain('размещено 6')
+    expect(next.notice?.message).toContain('размещено 7')
+    expect(next.notice?.message).toContain('ждут свободного места 1')
     expect(next.notice?.message).toContain('переселение невозможно 2')
+    expect(next.notice?.message).toContain('сохранено решений оператора 1')
   })
 
   it('на пустом реестре сообщает, что распределять нечего', () => {
@@ -71,7 +73,7 @@ describe('reducer приложения', () => {
     expect(cleared.lastRun).toBeNull()
 
     const reloaded = appReducer(cleared, { type: 'load_demo' })
-    expect(reloaded.bureau.ghosts).toHaveLength(8)
+    expect(reloaded.bureau.ghosts).toHaveLength(11)
     expect(reloaded.bureau.locations).toHaveLength(6)
   })
 

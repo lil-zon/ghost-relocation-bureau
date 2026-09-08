@@ -168,11 +168,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
 
-    case 'load_demo':
+    case 'load_demo': {
+      // Числа берутся из самого набора: захардкоженный текст разошёлся бы с данными
+      // при первой же правке демо-реестра.
+      const demo = createDemoState(state.now)
       return {
-        ...createInitialState(state.now, createDemoState(state.now)),
-        notice: { kind: 'success', message: 'Загружен демонстрационный набор: 8 заявок и 6 мест.' },
+        ...createInitialState(state.now, demo),
+        notice: {
+          kind: 'success',
+          message: `Загружен демонстрационный набор: ${plural(demo.ghosts.length, 'заявка', 'заявки', 'заявок')} и ${plural(demo.locations.length, 'место', 'места', 'мест')}.`,
+        },
       }
+    }
 
     case 'clear_requests':
       return {

@@ -169,8 +169,9 @@ describe('распределение демонстрационного набо
     }
   })
 
-  it('шесть из восьми заявок получают место', () => {
-    expect(next.ghosts.filter((ghost) => ghost.assignedLocationId !== null)).toHaveLength(6)
+  it('восемь из одиннадцати заявок получают место, остальные различают причину', () => {
+    expect(next.ghosts.filter((ghost) => ghost.assignedLocationId !== null)).toHaveLength(8)
     expect(next.ghosts.filter((ghost) => ghost.status === 'unassignable')).toHaveLength(2)
+    expect(next.ghosts.filter((ghost) => ghost.status === 'awaiting_capacity')).toHaveLength(1)
   })
 })

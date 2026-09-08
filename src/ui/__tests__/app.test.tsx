@@ -41,7 +41,9 @@ describe('основной сценарий оператора', () => {
     await user.click(screen.getByRole('button', { name: 'Распределить автоматически' }))
 
     expect(
-      screen.getByText(/Распределение выполнено: размещено 6, переселение невозможно 2/),
+      screen.getByText(
+        /Распределение выполнено: размещено 7, ждут свободного места 1, переселение невозможно 2, сохранено решений оператора 1/,
+      ),
     ).toBeInTheDocument()
 
     await openTab(user, 'Сводка')
@@ -188,7 +190,7 @@ describe('исправления по итогам ревью', () => {
     const row = screen.getByText('Агата Пепельная').closest('tr')!
     expect(within(row).getByText('принято')).toBeInTheDocument()
     expect(within(row).queryByText('оператор')).toBeNull()
-    expect(screen.getByText(/система 0 · принято 1 · оператор 0/)).toBeInTheDocument()
+    expect(screen.getByText(/система 0 · принято 1 · оператор 1/)).toBeInTheDocument()
   })
 
   it('нехватка мест объясняется как ожидание, а не как невозможность', async () => {
@@ -207,7 +209,8 @@ describe('исправления по итогам ревью', () => {
     await user.click(screen.getByRole('button', { name: /Второй дух/ }))
     expect(screen.getByText(/Подходящее место для заявки .* существует, но все такие места/)).toBeInTheDocument()
     expect(screen.getByText('Подошло бы, если бы освободилось')).toBeInTheDocument()
-    expect(screen.getByText(/Освободите место у одной из этих заявок/)).toBeInTheDocument()
+    // Единственный жилец — значит «это место», а не «одна из этих заявок».
+    expect(screen.getByText(/Сейчас здесь: .*\. Освободите это место/)).toBeInTheDocument()
     expect(screen.queryByText(/Ни одно из .* мест реестра не проходит/)).toBeNull()
   })
 
