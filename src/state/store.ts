@@ -1,6 +1,7 @@
 import { createDemoState, createEmptyState } from '../data/demoData'
 import { assign, unassign } from '../domain/assignment'
 import { assignAll, type GlobalAssignmentEntry } from '../domain/globalAssignment'
+import { plural } from '../domain/plural'
 import type { BureauState } from '../domain/types'
 
 export type NoticeKind = 'error' | 'warning' | 'success' | 'info'
@@ -104,12 +105,17 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         const ghost = outcome.state.ghosts.find((item) => item.id === action.ghostId)
         const location = outcome.state.locations.find((item) => item.id === action.locationId)
 
+        const warnings = outcome.validation.warnings.length
+
         return {
           ...state,
           bureau: outcome.state,
           notice: {
-            kind: 'success',
-            message: `Рекомендация принята: «${ghost?.name}» размещён(а) в «${location?.name}» (балл ${outcome.validation.score}).`,
+            kind: warnings > 0 ? 'warning' : 'success',
+            message:
+              warnings > 0
+                ? `Рекомендация принята: заявка «${ghost?.name}» размещена в «${location?.name}» (балл ${outcome.validation.score}), ${plural(warnings, 'замечание', 'замечания', 'замечаний')} системы сохранено в карточке.`
+                : `Рекомендация принята: заявка «${ghost?.name}» размещена в «${location?.name}» (балл ${outcome.validation.score}).`,
           },
         }
       } catch (error) {
@@ -138,8 +144,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           notice: {
             kind: withWarnings ? 'warning' : 'success',
             message: withWarnings
-              ? `«${ghost?.name}» размещён(а) в «${location?.name}» с предупреждениями (балл ${outcome.validation.score}).`
-              : `«${ghost?.name}» размещён(а) в «${location?.name}» (балл ${outcome.validation.score}).`,
+              ? `Заявка «${ghost?.name}» размещена в «${location?.name}» с замечаниями (балл ${outcome.validation.score}).`
+              : `Заявка «${ghost?.name}» размещена в «${location?.name}» (балл ${outcome.validation.score}).`,
           },
         }
       } catch (error) {

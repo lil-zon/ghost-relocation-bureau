@@ -75,9 +75,26 @@ function backupUnreadable(raw: string): boolean {
 function failure(raw: string, reason: string): LoadResult {
   const saved = backupUnreadable(raw)
   const tail = saved
-    ? ` Прежнее содержимое сохранено в резервной копии «${BACKUP_KEY}» и не потеряно.`
-    : ' Сделать резервную копию не удалось: браузер отказал в записи.'
+    ? ' Прежнее содержимое не потеряно: оно отложено в резервную копию, её можно скачать или удалить в панели ниже.'
+    : ' Сделать резервную копию не удалось: браузер отказал в записи, прежнее содержимое восстановить нельзя.'
   return { kind: 'error', message: `${reason}${tail}` }
+}
+
+/** Содержимое резервной копии, если она есть. */
+export function readBackup(): string | null {
+  try {
+    return window.localStorage.getItem(BACKUP_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function clearBackup(): void {
+  try {
+    window.localStorage.removeItem(BACKUP_KEY)
+  } catch {
+    // Отсутствие доступа к хранилищу не мешает работе приложения.
+  }
 }
 
 /**

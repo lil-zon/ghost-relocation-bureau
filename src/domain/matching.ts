@@ -1,5 +1,6 @@
 import { blockingOnly, detectConflicts, freeSlots, hasBlocking } from './constraints'
 import { scoreLocation } from './scoring'
+import { sharedConflictSummary } from './vocabulary'
 import type { Conflict, GhostRequest, MatchResult, RelocationLocation } from './types'
 
 /** Компонент считается сильной стороной места, начиная с этого соответствия. */
@@ -194,19 +195,43 @@ export function explainNoMatch(
   }
 
   const blockingByMatch = incompatible.map((match) => blockingOnly(match.conflicts))
-  const sharedCodes = blockingByMatch[0]
-    .map((conflict) => conflict.code)
-    .filter((code) => blockingByMatch.every((list) => list.some((item) => item.code === code)))
+  const first = blockingByMatch[0]
 
-  const sharedBlockers = blockingByMatch[0].filter((conflict) =>
-    sharedCodes.includes(conflict.code),
+  // Причина считается общей и дословно повторяемой, только если совпадает и код,
+  // и текст: сообщения содержат данные конкретного места, и подставлять числа
+  // одного места как общие для всех нельзя.
+  const identical = first.filter((conflict) =>
+    blockingByMatch.every((list) =>
+      list.some((item) => item.code === conflict.code && item.message === conflict.message),
+    ),
   )
+
+  // Код общий, но данные у мест разные: в корень идёт формулировка без чисел,
+  // а конкретика остаётся в карточках вариантов.
+  const summarized: Conflict[] = []
+  for (const conflict of first) {
+    if (identical.some((item) => item.code === conflict.code)) continue
+    if (summarized.some((item) => item.code === conflict.code)) continue
+    const isShared = blockingByMatch.every((list) =>
+      list.some((item) => item.code === conflict.code),
+    )
+    const summary = sharedConflictSummary[conflict.code]
+    if (isShared && summary) {
+      summarized.push({ code: conflict.code, severity: 'blocking', message: summary })
+    }
+  }
+
+  const sharedBlockers = [...identical, ...summarized]
 
   const alternatives = incompatible
     .map((match) => ({
       ...match,
       conflicts: match.conflicts.filter(
-        (conflict) => conflict.severity !== 'blocking' || !sharedCodes.includes(conflict.code),
+        (conflict) =>
+          conflict.severity !== 'blocking' ||
+          !identical.some(
+            (item) => item.code === conflict.code && item.message === conflict.message,
+          ),
       ),
     }))
     .sort((a, b) => {

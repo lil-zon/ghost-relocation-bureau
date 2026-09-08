@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { useStore } from './state/storeContext'
 import type { NoticeKind } from './state/store'
+import { BackupNotice } from './ui/components/BackupNotice'
 import { Button } from './ui/components/primitives'
 import { LocationsView } from './ui/LocationsView'
 import { ReportView } from './ui/ReportView'
@@ -27,6 +28,41 @@ export function App() {
   const { state, dispatch } = useStore()
   const [tab, setTab] = useState<TabId>('requests')
   const [confirmClear, setConfirmClear] = useState(false)
+  const tabRefs = useRef(new Map<TabId, HTMLButtonElement>())
+
+  /**
+   * Клавиатурная навигация по вкладкам.
+   *
+   * Роль `tab` вместе с roving tabindex убирает неактивные вкладки из обхода по Tab,
+   * поэтому без обработки стрелок они становятся недостижимы с клавиатуры вовсе.
+   * Обработчик обязателен, а не является улучшением.
+   */
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const current = TABS.findIndex((item) => item.id === tab)
+    let next = current
+
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (current + 1) % TABS.length
+        break
+      case 'ArrowLeft':
+        next = (current - 1 + TABS.length) % TABS.length
+        break
+      case 'Home':
+        next = 0
+        break
+      case 'End':
+        next = TABS.length - 1
+        break
+      default:
+        return
+    }
+
+    event.preventDefault()
+    const target = TABS[next].id
+    setTab(target)
+    tabRefs.current.get(target)?.focus()
+  }
 
   const pending = state.bureau.ghosts.filter(
     (ghost) => ghost.assignedLocationId === null && ghost.status !== 'unassignable',
@@ -83,16 +119,28 @@ export function App() {
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-[1400px] gap-1 px-5" role="tablist" aria-label="Разделы бюро">
+        <nav
+          className="mx-auto flex max-w-[1400px] gap-1 px-5"
+          role="tablist"
+          aria-label="Разделы бюро"
+          aria-orientation="horizontal"
+        >
           {TABS.map((item) => (
             <button
               key={item.id}
               type="button"
               role="tab"
               id={`tab-${item.id}`}
-              aria-controls={`panel-${item.id}`}
+              // Панель в DOM только одна — та, что открыта; ссылаться на несуществующие
+              // элементы у неактивных вкладок нельзя.
+              aria-controls={tab === item.id ? `panel-${item.id}` : undefined}
               aria-selected={tab === item.id}
               tabIndex={tab === item.id ? 0 : -1}
+              ref={(element) => {
+                if (element) tabRefs.current.set(item.id, element)
+                else tabRefs.current.delete(item.id)
+              }}
+              onKeyDown={handleTabKeyDown}
               onClick={() => setTab(item.id)}
               className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
                 tab === item.id
@@ -123,6 +171,8 @@ export function App() {
             </button>
           </div>
         )}
+
+        <BackupNotice />
 
         <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
           {tab === 'requests' && <RequestsView state={state} dispatch={dispatch} />}

@@ -121,7 +121,7 @@ describe('ручное назначение', () => {
     expect(screen.getByText(/Подтвердите решение/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Подтвердить назначение' }))
-    expect(screen.getByText(/с предупреждениями \(балл \d+\)/)).toBeInTheDocument()
+    expect(screen.getByText(/с замечаниями \(балл \d+\)/)).toBeInTheDocument()
     expect(screen.getByText('Текущее размещение')).toBeInTheDocument()
   })
 
@@ -277,5 +277,98 @@ describe('исправления по итогам ревью', () => {
     await user.click(screen.getByRole('tab', { name: 'Места' }))
     expect(screen.getByRole('tab', { name: 'Места' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tabpanel')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Замечания второго ревью. Проверяется поведение, а не разметка: прошлый тест
+ * доступности смотрел на роли и клик мышью и поэтому пропустил сломанную клавиатуру.
+ */
+describe('исправления по итогам второго ревью', () => {
+  it('по вкладкам можно ходить стрелками, Home и End', async () => {
+    const user = userEvent.setup()
+    renderApp(createDemoState(NOW))
+
+    screen.getByRole('tab', { name: 'Заявки' }).focus()
+
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Места' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Места' })).toHaveFocus()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+
+    await user.keyboard('{End}')
+    expect(screen.getByRole('tab', { name: 'AI Worklog' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('AI-инструменты')).toBeInTheDocument()
+
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Заявки' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('tab', { name: 'AI Worklog' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.keyboard('{Home}')
+    expect(screen.getByRole('tab', { name: 'Заявки' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Заявки' })).toHaveFocus()
+  })
+
+  it('активная вкладка остаётся достижимой обычным Tab', async () => {
+    renderApp(createDemoState(NOW))
+    expect(screen.getByRole('tab', { name: 'Заявки' })).toHaveAttribute('tabindex', '0')
+    expect(screen.getByRole('tab', { name: 'Места' })).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('расхождение с рекомендацией называется один раз, а не дважды', async () => {
+    const user = userEvent.setup()
+    renderApp(createDemoState(NOW))
+
+    await user.click(screen.getByRole('button', { name: /Агата Пепельная/ }))
+    await user.selectOptions(screen.getByRole('combobox'), 'loc-theatre')
+    await user.click(screen.getByRole('button', { name: 'Назначить с замечаниями' }))
+    await user.click(screen.getByRole('button', { name: 'Подтвердить назначение' }))
+
+    const trace = screen.getByText('Как принято решение').parentElement!
+    const mentions = trace.textContent!.match(/Система рекомендует|система рекомендовала/gi) ?? []
+    expect(mentions).toHaveLength(1)
+    // Прочие замечания при этом сохраняются.
+    expect(trace.textContent).toContain('Температура')
+  })
+
+  it('принятие рекомендации с замечаниями сообщает о них', async () => {
+    const user = userEvent.setup()
+    renderApp({
+      ghosts: [
+        makeGhost({
+          id: 'g-1',
+          name: 'Тревожный дух',
+          anxietyLevel: 9,
+          preferredTemperature: 12,
+        }),
+      ],
+      locations: [makeLocation({ id: 'loc-a', name: 'Людный дом', humansPresent: true })],
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Принять рекомендацию' }))
+    expect(screen.getByText(/Рекомендация принята/)).toBeInTheDocument()
+    expect(screen.getByText(/замечание|замечания|замечаний/)).toBeInTheDocument()
+  })
+
+  it('резервную копию повреждённых данных можно скачать или удалить', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem('ghost-relocation-bureau', '{сломанный json')
+
+    render(
+      <StoreProvider now={NOW}>
+        <App />
+      </StoreProvider>,
+    )
+
+    expect(screen.getByText(/Сохранена резервная копия нечитаемых данных/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Скачать резервную копию' })).toBeInTheDocument()
+    // Ключ хранилища в сообщении оператору не упоминается.
+    expect(screen.queryByText(/corrupted-backup/)).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Удалить копию' }))
+    expect(screen.queryByText(/Сохранена резервная копия/)).toBeNull()
+    window.localStorage.clear()
   })
 })

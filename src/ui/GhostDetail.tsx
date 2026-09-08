@@ -116,7 +116,7 @@ function UnplacedPanel({
         <div>
           <div className="mb-2 text-[11px] tracking-wide text-muted uppercase">
             {sharedBlockers.length > 0
-              ? 'Что ещё мешает, помимо корневой причины'
+              ? 'Что мешает каждому месту в отдельности'
               : 'Ближайшие варианты и что их блокирует'}
           </div>
           <div className="space-y-3">
@@ -164,6 +164,12 @@ function DecisionTrace({ ghost, bureau }: { ghost: GhostRequest; bureau: BureauS
     (location) => location.id === record.recommendedLocationId,
   )?.name
 
+  // Расхождение с рекомендацией уже показано строкой выше — в списке замечаний
+  // повторять его не нужно.
+  const otherWarnings = record.warnings.filter(
+    (warning) => warning.code !== 'worse_than_recommended',
+  )
+
   return (
     <div className="rounded-lg border border-line bg-raised/50 p-3">
       <div className="mb-1 text-[11px] tracking-wide text-muted uppercase">Как принято решение</div>
@@ -179,10 +185,10 @@ function DecisionTrace({ ghost, bureau }: { ghost: GhostRequest; bureau: BureauS
           Это и был лучший вариант по расчёту на момент назначения (балл {record.score}).
         </div>
       )}
-      {record.warnings.length > 0 && (
+      {otherWarnings.length > 0 && (
         <div className="mt-2">
           <div className="mb-1 text-[11px] text-muted">Замечания, принятые оператором:</div>
-          <ConflictList conflicts={record.warnings} dense />
+          <ConflictList conflicts={otherWarnings} dense />
         </div>
       )}
     </div>

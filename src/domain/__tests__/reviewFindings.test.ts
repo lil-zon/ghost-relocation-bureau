@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDemoState } from '../../data/demoData'
-import { assign, findGhost, findLocation } from '../assignment'
+import { assign, findGhost, findLocation, unassign } from '../assignment'
 import { isoDateOffset } from '../dates'
 import { assignAll } from '../globalAssignment'
 import { blockedOnlyByCapacity, classifyUnplaced, explainExistingAssignment, explainNoMatch } from '../matching'
@@ -211,11 +211,32 @@ describe('след решения сохраняется вместе с наз�
     const assigned = assign(state, 'g-1', 'loc-a', NOW, { source: 'auto', confirmed: true })
     expect(assigned.ok).toBe(true)
     if (!assigned.ok) return
+    expect(findGhost(assigned.state, 'g-1')!.assignmentRecord).not.toBeNull()
 
-    const outcome = assign(assigned.state, 'g-1', 'loc-a', NOW, { source: 'auto', confirmed: true })
-    expect(outcome.ok).toBe(true)
-    if (!outcome.ok) return
-    expect(findGhost(outcome.state, 'g-1')!.assignmentRecord).not.toBeNull()
+    const released = unassign(assigned.state, 'g-1')
+    expect(findGhost(released, 'g-1')!.assignmentRecord).toBeNull()
+    expect(findGhost(released, 'g-1')!.assignmentSource).toBeNull()
+  })
+
+  it('переназначение заменяет след решения новым', () => {
+    const state: BureauState = {
+      ghosts: [makeGhost({ id: 'g-1', preferredTemperature: 12 })],
+      locations: [
+        makeLocation({ id: 'loc-a', temperature: 12 }),
+        makeLocation({ id: 'loc-b', temperature: 24 }),
+      ],
+    }
+    const first = assign(state, 'g-1', 'loc-a', NOW, { source: 'auto', confirmed: true })
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+
+    const second = assign(first.state, 'g-1', 'loc-b', NOW, { source: 'manual', confirmed: true })
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+
+    const record = findGhost(second.state, 'g-1')!.assignmentRecord!
+    expect(record.source).toBe('manual')
+    expect(record.recommendedLocationId).toBe('loc-a')
   })
 })
 
@@ -270,5 +291,86 @@ describe('демонстрационный набор после исправл�
     expect(
       entries.filter((entry) => entry.unplacedReason === 'unassignable').map((e) => e.ghostId).sort(),
     ).toEqual(['g-kalcifer', 'g-marfa'])
+  })
+})
+
+/**
+ * Замечания второго внешнего ревью — они касались кода, написанного
+ * для исправления первого.
+ */
+describe('общая причина не подставляет числа одного места', () => {
+  it('при разной занятости корневая причина формулируется без чисел', () => {
+    const ghost = makeGhost({ id: 'g-1' })
+    const locations = [
+      makeLocation({ id: 'loc-small', capacity: 1, currentOccupancy: 1 }),
+      makeLocation({ id: 'loc-big', capacity: 4, currentOccupancy: 4 }),
+    ]
+
+    const { sharedBlockers, alternatives } = explainNoMatch(ghost, locations, NOW)
+
+    expect(sharedBlockers).toHaveLength(1)
+    expect(sharedBlockers[0].code).toBe('location_full')
+    // Ни одно число конкретного места не попадает в общую формулировку.
+    expect(sharedBlockers[0].message).not.toMatch(/\d/)
+    expect(sharedBlockers[0].message).toContain('Свободных мест нет')
+
+    // Конкретика остаётся там, где она верна, — в карточках вариантов.
+    const small = alternatives.find((item) => item.locationId === 'loc-small')!
+    const big = alternatives.find((item) => item.locationId === 'loc-big')!
+    expect(small.conflicts.some((c) => c.message.includes('занято 1 из 1'))).toBe(true)
+    expect(big.conflicts.some((c) => c.message.includes('занято 4 из 4'))).toBe(true)
+  })
+
+  it('при одинаковых данных причина выносится дословно и не повторяется в вариантах', () => {
+    const ghost = makeGhost({ id: 'g-1' })
+    const locations = [
+      makeLocation({ id: 'loc-a', capacity: 1, currentOccupancy: 1 }),
+      makeLocation({ id: 'loc-b', capacity: 1, currentOccupancy: 1 }),
+    ]
+
+    const { sharedBlockers, alternatives } = explainNoMatch(ghost, locations, NOW)
+
+    expect(sharedBlockers).toHaveLength(1)
+    expect(sharedBlockers[0].message).toContain('занято 1 из 1')
+    for (const alternative of alternatives) {
+      expect(alternative.conflicts.filter((c) => c.severity === 'blocking')).toHaveLength(0)
+    }
+  })
+
+  it('разная требуемая влажность не подставляется как общая', () => {
+    const ghost = makeGhost({
+      id: 'g-1',
+      specialConditions: [{ kind: 'min_humidity', value: 90 }],
+    })
+    const locations = [
+      makeLocation({ id: 'loc-dry', humidity: 30 }),
+      makeLocation({ id: 'loc-almost', humidity: 85 }),
+    ]
+
+    const { sharedBlockers, alternatives } = explainNoMatch(ghost, locations, NOW)
+
+    expect(sharedBlockers[0].message).not.toContain('30%')
+    expect(sharedBlockers[0].message).not.toContain('85%')
+    expect(
+      alternatives.find((item) => item.locationId === 'loc-almost')!.conflicts.some((c) =>
+        c.message.includes('85%'),
+      ),
+    ).toBe(true)
+  })
+
+  it('причина без данных места по-прежнему выносится дословно', () => {
+    const ghost = makeGhost({ id: 'g-1', deadline: isoDateOffset(NOW, -3) })
+    const locations = [makeLocation({ id: 'loc-a' }), makeLocation({ id: 'loc-b', temperature: 20 })]
+
+    const { sharedBlockers, alternatives } = explainNoMatch(ghost, locations, NOW)
+
+    expect(sharedBlockers).toHaveLength(1)
+    expect(sharedBlockers[0].message).toContain('Срок переселения истёк')
+    // Общая причина убрана из вариантов; собственные предупреждения мест остаются.
+    expect(
+      alternatives.every(
+        (item) => item.conflicts.filter((c) => c.severity === 'blocking').length === 0,
+      ),
+    ).toBe(true)
   })
 })

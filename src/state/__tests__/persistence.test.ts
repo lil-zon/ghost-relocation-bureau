@@ -29,7 +29,9 @@ describe('хранилище состояния', () => {
     expect(result.kind).toBe('error')
     if (result.kind !== 'error') return
     expect(result.message).toContain('повреждены')
-    expect(result.message).toContain('резервной копии')
+    expect(result.message).toContain('резервную копию')
+    // Технический ключ хранилища в сообщении оператору не фигурирует.
+    expect(result.message).not.toContain(BACKUP_KEY)
     expect(window.localStorage.getItem(BACKUP_KEY)).toBe('{сломанный json')
   })
 
