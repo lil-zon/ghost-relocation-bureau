@@ -120,7 +120,12 @@ function createLocations(): RelocationLocation[] {
 }
 
 function createGhosts(now: Date): GhostRequest[] {
-  const pending = { status: 'pending', assignedLocationId: null, assignmentSource: null } as const
+  const pending = {
+    status: 'pending',
+    assignedLocationId: null,
+    assignmentSource: null,
+    assignmentRecord: null,
+  } as const
 
   return [
     {

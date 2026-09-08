@@ -104,7 +104,14 @@ export function ManualAssign({
               </div>
             </div>
 
-            {!validation.valid && (
+            {alreadyHere && (
+              <div className="text-[13px] text-muted">
+                Заявка уже размещена здесь. Чтобы сменить место, выберите другое или освободите
+                текущее.
+              </div>
+            )}
+
+            {!alreadyHere && !validation.valid && (
               <div>
                 <div className="mb-1 text-[13px] font-semibold text-danger">
                   Назначение запрещено — обязательные условия не выполнены
@@ -113,7 +120,7 @@ export function ManualAssign({
               </div>
             )}
 
-            {validation.valid && validation.warnings.length > 0 && (
+            {!alreadyHere && validation.valid && validation.warnings.length > 0 && (
               <div>
                 <div className="mb-1 text-[13px] font-semibold text-warn">
                   Место допустимо, но есть замечания
@@ -122,7 +129,7 @@ export function ManualAssign({
               </div>
             )}
 
-            {validation.valid && validation.warnings.length === 0 && (
+            {!alreadyHere && validation.valid && validation.warnings.length === 0 && (
               <div className="text-[13px] text-ok">
                 Замечаний нет: место соответствует всем условиям заявки.
               </div>

@@ -1,4 +1,5 @@
 import { freeSlots, isFull } from '../domain/constraints'
+import { plural } from '../domain/plural'
 import type { AppState } from '../state/store'
 import { describeRestriction, lightingLabel, locationTypeLabel, noiseLabel } from '../domain/vocabulary'
 import { Badge, Meter, Panel } from './components/primitives'
@@ -89,7 +90,7 @@ export function LocationsView({ state }: { state: AppState }) {
                     {placed.length === 0 ? (
                       <span className="text-[11px] text-muted">
                         {location.currentOccupancy > 0
-                          ? `${location.currentOccupancy} прежних жильца, не из текущего реестра`
+                          ? `${plural(location.currentOccupancy, 'прежний жилец', 'прежних жильца', 'прежних жильцов')}, не из текущего реестра`
                           : 'никого'}
                       </span>
                     ) : (

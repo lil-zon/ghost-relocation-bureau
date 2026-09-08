@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { buildReport } from '../domain/report'
+import { assignmentSourceShortLabel, ghostStatusLabel } from '../domain/vocabulary'
 import type { AppState } from '../state/store'
 import { Badge, EmptyState, Meter, Panel, StatTile } from './components/primitives'
 import { scoreTone } from './components/tone'
@@ -20,6 +21,7 @@ export function ReportView({ state }: { state: AppState }) {
     state.bureau.ghosts.find((ghost) => ghost.id === ghostId)?.name ?? ghostId
 
   const unplaced = state.bureau.ghosts.filter((ghost) => ghost.assignedLocationId === null)
+  const withoutPlace = report.total - report.assigned
 
   return (
     <div className="space-y-4">
@@ -29,24 +31,29 @@ export function ReportView({ state }: { state: AppState }) {
           label="Размещено"
           value={report.assigned}
           tone="ok"
-          hint={`авто ${report.assignedAuto} · вручную ${report.assignedManual}`}
+          hint={`система ${report.assignedAuto} · принято ${report.assignedAccepted} · оператор ${report.assignedManual}`}
         />
         <StatTile
           label="Без места"
-          value={report.total - report.assigned}
-          tone={report.total - report.assigned > 0 ? 'danger' : 'neutral'}
-          hint={`просрочено ${report.overdue}`}
+          value={withoutPlace}
+          tone={withoutPlace > 0 ? 'danger' : 'neutral'}
+          hint={`ждут места ${report.awaitingCapacity} · невозможно ${report.unassignable} · из них просрочено ${report.overdueUnplaced}`}
         />
         <StatTile
           label="Средний балл"
           value={report.averageScore ?? '—'}
           tone={report.averageScore === null ? 'neutral' : scoreTone(report.averageScore)}
-          hint="по размещённым заявкам"
+          hint="по размещениям без нарушений"
         />
         <StatTile
-          label="Свободных мест"
-          value={report.totalFree}
-          hint={`занято ${report.totalOccupancy} из ${report.totalCapacity}`}
+          label="Требуют пересмотра"
+          value={report.needsReview}
+          tone={report.needsReview > 0 ? 'danger' : 'neutral'}
+          hint={
+            report.needsReview > 0
+              ? 'размещение перестало проходить условия'
+              : `просрочено во всём реестре: ${report.overdueTotal}`
+          }
         />
       </div>
 
@@ -70,12 +77,23 @@ export function ReportView({ state }: { state: AppState }) {
               <tbody>
                 {report.assignedRows.map((row) => (
                   <tr key={row.ghostId} className="border-b border-line/60 last:border-0">
-                    <td className="py-2 pr-3 text-ink">{row.ghostName}</td>
+                    <td className="py-2 pr-3 text-ink">
+                      {row.ghostName}
+                      {row.needsReview && (
+                        <div className="text-[11px] text-danger">
+                          {row.blocking[0]?.message ?? 'условия нарушены'}
+                        </div>
+                      )}
+                    </td>
                     <td className="py-2 pr-3 text-muted">{row.locationName}</td>
                     <td className="py-2 pr-3">
-                      <Badge tone={row.source === 'manual' ? 'warn' : 'ok'}>
-                        {row.source === 'manual' ? 'оператор' : 'система'}
-                      </Badge>
+                      {row.needsReview ? (
+                        <Badge tone="danger">требует пересмотра</Badge>
+                      ) : (
+                        <Badge tone={row.source === 'manual' ? 'warn' : 'ok'}>
+                          {assignmentSourceShortLabel[row.source]}
+                        </Badge>
+                      )}
                     </td>
                     <td className="w-16 py-2 text-right tabular-nums text-ink">{row.score}</td>
                   </tr>
@@ -117,8 +135,16 @@ export function ReportView({ state }: { state: AppState }) {
                   className="flex items-center justify-between gap-2 border-b border-line/60 pb-2 text-[13px] last:border-0 last:pb-0"
                 >
                   <span className="text-ink">{ghost.name}</span>
-                  <Badge tone={ghost.status === 'unassignable' ? 'danger' : 'neutral'}>
-                    {ghost.status === 'unassignable' ? 'переселение невозможно' : 'ожидает решения'}
+                  <Badge
+                    tone={
+                      ghost.status === 'unassignable'
+                        ? 'danger'
+                        : ghost.status === 'awaiting_capacity'
+                          ? 'warn'
+                          : 'neutral'
+                    }
+                  >
+                    {ghostStatusLabel[ghost.status]}
                   </Badge>
                 </li>
               ))}
@@ -175,11 +201,11 @@ export function ReportView({ state }: { state: AppState }) {
                     {entry.skippedManual ? (
                       <Badge tone="warn">сохранено решение оператора</Badge>
                     ) : entry.match ? (
-                      <Badge tone="ok">
-                        размещено, балл {entry.match.score}
-                      </Badge>
+                      <Badge tone="ok">размещено, балл {entry.match.score}</Badge>
+                    ) : entry.unplacedReason === 'awaiting_capacity' ? (
+                      <Badge tone="warn">ждёт свободного места</Badge>
                     ) : (
-                      <Badge tone="danger">места нет</Badge>
+                      <Badge tone="danger">переселение невозможно</Badge>
                     )}
                   </td>
                 </tr>

@@ -15,6 +15,7 @@ export function makeGhost(overrides: Partial<GhostRequest> = {}): GhostRequest {
     status: 'pending',
     assignedLocationId: null,
     assignmentSource: null,
+    assignmentRecord: null,
     summary: 'Фикстура',
     ...overrides,
   }

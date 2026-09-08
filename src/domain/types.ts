@@ -40,7 +40,37 @@ export type LocationRestriction =
   | { kind: 'max_anxiety'; value: number }
   | { kind: 'no_new_residents'; reason: string }
 
-export type GhostStatus = 'pending' | 'assigned' | 'unassignable'
+/**
+ * Кто выбрал место.
+ * `auto`     — выбрала система в ходе распределения;
+ * `accepted` — выбрала система, оператор согласился с рекомендацией;
+ * `manual`   — место выбрал оператор вопреки рекомендации или вместо неё.
+ *
+ * `accepted` существует отдельно, потому что согласие с рекомендацией — это не
+ * собственное решение оператора: статистика «сколько решил алгоритм» не должна
+ * от него портиться, а повторное распределение вправе такое место пересчитать.
+ */
+export type AssignmentSource = 'auto' | 'accepted' | 'manual'
+
+/**
+ * Состояние заявки.
+ * `awaiting_capacity` отделён от `unassignable` намеренно: «подходящее место есть,
+ * но занято» и «подходящего места не существует» требуют разных действий оператора.
+ */
+export type GhostStatus = 'pending' | 'assigned' | 'awaiting_capacity' | 'unassignable'
+
+/**
+ * След принятого решения: что предлагала система в момент назначения и что
+ * выбрали в итоге. Нужен для аудита ручных решений — после подтверждения
+ * сравнение с рекомендацией иначе теряется.
+ */
+export interface AssignmentRecord {
+  source: AssignmentSource
+  score: number
+  recommendedLocationId: string | null
+  recommendedScore: number
+  warnings: Conflict[]
+}
 
 export interface GhostRequest {
   id: string
@@ -55,7 +85,9 @@ export interface GhostRequest {
   status: GhostStatus
   assignedLocationId: string | null
   /** Как именно возникло текущее назначение. */
-  assignmentSource: 'auto' | 'manual' | null
+  assignmentSource: AssignmentSource | null
+  /** Что предлагала система в момент назначения; null, если места нет. */
+  assignmentRecord: AssignmentRecord | null
   /** Короткая справка по заявке для оператора. */
   summary: string
 }

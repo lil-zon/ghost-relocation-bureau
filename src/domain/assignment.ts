@@ -2,9 +2,12 @@ import { blockingOnly, detectConflicts, warningsOnly } from './constraints'
 import { findBestMatch } from './matching'
 import { scoreLocation } from './scoring'
 import type {
+  AssignmentRecord,
+  AssignmentSource,
   BureauState,
   Conflict,
   GhostRequest,
+  GhostStatus,
   MatchResult,
   RelocationLocation,
   ScoreBreakdown,
@@ -119,7 +122,13 @@ export function unassign(state: BureauState, ghostId: string): BureauState {
   return {
     ghosts: state.ghosts.map((item) =>
       item.id === ghostId
-        ? { ...item, assignedLocationId: null, assignmentSource: null, status: 'pending' }
+        ? {
+            ...item,
+            assignedLocationId: null,
+            assignmentSource: null,
+            assignmentRecord: null,
+            status: 'pending',
+          }
         : item,
     ),
     locations: state.locations.map((location) =>
@@ -131,7 +140,7 @@ export function unassign(state: BureauState, ghostId: string): BureauState {
 }
 
 interface AssignOptions {
-  source: 'auto' | 'manual'
+  source: AssignmentSource
   /** Оператор явно подтвердил назначение с предупреждениями. */
   confirmed?: boolean
 }
@@ -174,6 +183,15 @@ export function assign(
     }
   }
 
+  // Что предлагала система в этот момент — сохраняем как след решения.
+  const record: AssignmentRecord = {
+    source: options.source,
+    score: validation.score,
+    recommendedLocationId: validation.recommended?.locationId ?? null,
+    recommendedScore: validation.recommended?.score ?? 0,
+    warnings: validation.warnings,
+  }
+
   // Снимаем прежнее назначение, затем занимаем новое место.
   const released = unassign(state, ghostId)
   const next: BureauState = {
@@ -183,6 +201,7 @@ export function assign(
             ...item,
             assignedLocationId: locationId,
             assignmentSource: options.source,
+            assignmentRecord: record,
             status: 'assigned',
           }
         : item,
@@ -196,14 +215,27 @@ export function assign(
   return { ok: true, state: next, validation }
 }
 
-/** Помечает заявку как неразрешимую, не занимая место. */
-export function markUnassignable(state: BureauState, ghostId: string): BureauState {
+/**
+ * Помечает заявку как оставшуюся без места.
+ * Статус различает «подходящее место занято» и «подходящего места не существует».
+ */
+export function markUnplaced(
+  state: BureauState,
+  ghostId: string,
+  status: Extract<GhostStatus, 'awaiting_capacity' | 'unassignable'>,
+): BureauState {
   const released = unassign(state, ghostId)
   return {
     ...released,
     ghosts: released.ghosts.map((ghost) =>
       ghost.id === ghostId
-        ? { ...ghost, status: 'unassignable', assignedLocationId: null, assignmentSource: null }
+        ? {
+            ...ghost,
+            status,
+            assignedLocationId: null,
+            assignmentSource: null,
+            assignmentRecord: null,
+          }
         : ghost,
     ),
   }

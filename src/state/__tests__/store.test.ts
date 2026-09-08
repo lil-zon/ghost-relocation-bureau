@@ -15,7 +15,7 @@ describe('reducer приложения', () => {
     expect(next.lastRun).not.toBeNull()
     expect(next.notice?.kind).toBe('warning')
     expect(next.notice?.message).toContain('размещено 6')
-    expect(next.notice?.message).toContain('без места 2')
+    expect(next.notice?.message).toContain('переселение невозможно 2')
   })
 
   it('на пустом реестре сообщает, что распределять нечего', () => {

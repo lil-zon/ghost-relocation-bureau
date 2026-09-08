@@ -20,10 +20,13 @@ export function MatchExplanation({
   match,
   location,
   headline,
+  reasonsTitle = 'Почему это место',
 }: {
   match: MatchResult
   location: RelocationLocation
   headline?: string
+  /** Заголовок списка причин: у нарушенного размещения он не должен звучать как оправдание. */
+  reasonsTitle?: string
 }) {
   const tone = scoreTone(match.score)
 
@@ -46,7 +49,7 @@ export function MatchExplanation({
 
       {match.reasons.length > 0 && (
         <div>
-          <div className="mb-1 text-[11px] tracking-wide text-muted uppercase">Почему это место</div>
+          <div className="mb-1 text-[11px] tracking-wide text-muted uppercase">{reasonsTitle}</div>
           <ul className="space-y-1">
             {match.reasons.map((reason) => (
               <li key={reason} className="flex gap-2 text-[13px] text-ink">

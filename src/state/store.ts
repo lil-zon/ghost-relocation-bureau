@@ -22,6 +22,7 @@ export interface AppState {
 
 export type AppAction =
   | { type: 'assign_all' }
+  | { type: 'accept_recommendation'; ghostId: string; locationId: string }
   | { type: 'manual_assign'; ghostId: string; locationId: string; confirmed?: boolean }
   | { type: 'unassign'; ghostId: string }
   | { type: 'load_demo' }
@@ -61,26 +62,58 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       try {
         const result = assignAll(state.bureau, state.now)
         const placed = result.entries.filter((entry) => entry.match !== null).length
-        const failed = result.entries.filter(
-          (entry) => entry.match === null && !entry.skippedManual,
+        const waiting = result.entries.filter(
+          (entry) => entry.unplacedReason === 'awaiting_capacity',
+        ).length
+        const impossible = result.entries.filter(
+          (entry) => entry.unplacedReason === 'unassignable',
         ).length
         const manual = result.entries.filter((entry) => entry.skippedManual).length
 
         const parts = [`размещено ${placed}`]
-        if (failed > 0) parts.push(`без места ${failed}`)
-        if (manual > 0) parts.push(`сохранено ручных ${manual}`)
+        if (waiting > 0) parts.push(`ждут свободного места ${waiting}`)
+        if (impossible > 0) parts.push(`переселение невозможно ${impossible}`)
+        if (manual > 0) parts.push(`сохранено решений оператора ${manual}`)
 
         return {
           ...state,
           bureau: result.state,
           lastRun: result.entries,
           notice: {
-            kind: failed > 0 ? 'warning' : 'success',
+            kind: waiting + impossible > 0 ? 'warning' : 'success',
             message: `Распределение выполнено: ${parts.join(', ')}.`,
           },
         }
       } catch (error) {
         return { ...state, notice: describeUnexpected(error, 'Сбой при автоматическом распределении') }
+      }
+    }
+
+    case 'accept_recommendation': {
+      try {
+        // Место выбрала система — оператор лишь согласился, поэтому источник не `manual`.
+        const outcome = assign(state.bureau, action.ghostId, action.locationId, state.now, {
+          source: 'accepted',
+          confirmed: true,
+        })
+
+        if (!outcome.ok) {
+          return { ...state, notice: { kind: 'error', message: outcome.reason } }
+        }
+
+        const ghost = outcome.state.ghosts.find((item) => item.id === action.ghostId)
+        const location = outcome.state.locations.find((item) => item.id === action.locationId)
+
+        return {
+          ...state,
+          bureau: outcome.state,
+          notice: {
+            kind: 'success',
+            message: `Рекомендация принята: «${ghost?.name}» размещён(а) в «${location?.name}» (балл ${outcome.validation.score}).`,
+          },
+        }
+      } catch (error) {
+        return { ...state, notice: describeUnexpected(error, 'Сбой при принятии рекомендации') }
       }
     }
 

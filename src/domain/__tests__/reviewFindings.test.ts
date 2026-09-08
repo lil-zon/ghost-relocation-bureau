@@ -1,0 +1,274 @@
+import { describe, expect, it } from 'vitest'
+import { createDemoState } from '../../data/demoData'
+import { assign, findGhost, findLocation } from '../assignment'
+import { isoDateOffset } from '../dates'
+import { assignAll } from '../globalAssignment'
+import { blockedOnlyByCapacity, classifyUnplaced, explainExistingAssignment, explainNoMatch } from '../matching'
+import { buildReport } from '../report'
+import type { BureauState } from '../types'
+import { makeGhost, makeLocation, NOW } from './fixtures'
+
+/**
+ * Проверки, закрывающие замечания внешнего ревью первой версии.
+ * Каждый блок соответствует конкретной находке — ни одну из них
+ * прежний набор тестов не ловил.
+ */
+
+describe('источник решения: принятая рекомендация не является решением оператора', () => {
+  function stateWithTwoLocations(): BureauState {
+    return {
+      ghosts: [makeGhost({ id: 'g-1', preferredTemperature: 12 })],
+      locations: [
+        makeLocation({ id: 'loc-best', capacity: 1, temperature: 12 }),
+        makeLocation({ id: 'loc-other', capacity: 1, temperature: 16 }),
+      ],
+    }
+  }
+
+  it('принятие рекомендации помечается как accepted, а не manual', () => {
+    const outcome = assign(stateWithTwoLocations(), 'g-1', 'loc-best', NOW, {
+      source: 'accepted',
+      confirmed: true,
+    })
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+
+    expect(findGhost(outcome.state, 'g-1')!.assignmentSource).toBe('accepted')
+
+    const report = buildReport(outcome.state, NOW)
+    expect(report.assignedAccepted).toBe(1)
+    expect(report.assignedManual).toBe(0)
+  })
+
+  it('автоматическое распределение пересчитывает принятую рекомендацию', () => {
+    // Оператор принял рекомендацию в неоптимальное место; система вправе его пересмотреть.
+    const accepted = assign(stateWithTwoLocations(), 'g-1', 'loc-other', NOW, {
+      source: 'accepted',
+      confirmed: true,
+    })
+    expect(accepted.ok).toBe(true)
+    if (!accepted.ok) return
+
+    const { state, entries } = assignAll(accepted.state, NOW)
+
+    expect(findGhost(state, 'g-1')!.assignedLocationId).toBe('loc-best')
+    expect(entries.find((entry) => entry.ghostId === 'g-1')?.skippedManual).toBe(false)
+  })
+
+  it('собственное решение оператора по-прежнему неприкосновенно', () => {
+    const manual = assign(stateWithTwoLocations(), 'g-1', 'loc-other', NOW, {
+      source: 'manual',
+      confirmed: true,
+    })
+    expect(manual.ok).toBe(true)
+    if (!manual.ok) return
+
+    const { state, entries } = assignAll(manual.state, NOW)
+    expect(findGhost(state, 'g-1')!.assignedLocationId).toBe('loc-other')
+    expect(entries.find((entry) => entry.ghostId === 'g-1')?.skippedManual).toBe(true)
+  })
+})
+
+describe('дефицит мест отличается от невозможности переселения', () => {
+  it('занятое, но подходящее место даёт статус «ждёт свободного места»', () => {
+    const ghost = makeGhost({ id: 'g-1' })
+    const locations = [makeLocation({ id: 'loc-full', capacity: 1, currentOccupancy: 1 })]
+
+    expect(classifyUnplaced(ghost, locations, NOW)).toBe('awaiting_capacity')
+    expect(blockedOnlyByCapacity(ghost, locations, NOW)).toHaveLength(1)
+  })
+
+  it('непреодолимое условие даёт статус «переселение невозможно»', () => {
+    const ghost = makeGhost({ id: 'g-1', specialConditions: [{ kind: 'requires_attic' }] })
+    const locations = [
+      makeLocation({ id: 'loc-full', capacity: 1, currentOccupancy: 1, hasAttic: false }),
+      makeLocation({ id: 'loc-free', hasAttic: false }),
+    ]
+
+    expect(classifyUnplaced(ghost, locations, NOW)).toBe('unassignable')
+    expect(blockedOnlyByCapacity(ghost, locations, NOW)).toHaveLength(0)
+  })
+
+  it('распределение расставляет оба статуса по одному прогону', () => {
+    const state: BureauState = {
+      ghosts: [
+        makeGhost({ id: 'g-easy-1' }),
+        makeGhost({ id: 'g-easy-2' }),
+        makeGhost({ id: 'g-impossible', specialConditions: [{ kind: 'min_humidity', value: 99 }] }),
+      ],
+      locations: [makeLocation({ id: 'loc-one', capacity: 1, humidity: 65 })],
+    }
+
+    const { state: next, entries } = assignAll(state, NOW)
+
+    const waiting = next.ghosts.filter((ghost) => ghost.status === 'awaiting_capacity')
+    const impossible = next.ghosts.filter((ghost) => ghost.status === 'unassignable')
+
+    expect(waiting).toHaveLength(1)
+    expect(impossible.map((ghost) => ghost.id)).toEqual(['g-impossible'])
+    expect(entries.find((entry) => entry.ghostId === 'g-impossible')?.unplacedReason).toBe(
+      'unassignable',
+    )
+  })
+})
+
+describe('сводка и карточка показывают одно и то же', () => {
+  function stateWithExpiredAssignment(): BureauState {
+    return {
+      ghosts: [
+        makeGhost({
+          id: 'g-expired',
+          deadline: isoDateOffset(NOW, -5),
+          assignedLocationId: 'loc-a',
+          assignmentSource: 'auto',
+          status: 'assigned',
+        }),
+        makeGhost({ id: 'g-ok', assignedLocationId: 'loc-b', assignmentSource: 'auto', status: 'assigned' }),
+      ],
+      locations: [
+        makeLocation({ id: 'loc-a', capacity: 2, currentOccupancy: 1 }),
+        makeLocation({ id: 'loc-b', capacity: 2, currentOccupancy: 1 }),
+      ],
+    }
+  }
+
+  it('размещение с истёкшим сроком помечается и получает тот же балл, что в карточке', () => {
+    const state = stateWithExpiredAssignment()
+    const report = buildReport(state, NOW)
+
+    const row = report.assignedRows.find((item) => item.ghostId === 'g-expired')!
+    const card = explainExistingAssignment(
+      findGhost(state, 'g-expired')!,
+      findLocation(state, 'loc-a')!,
+      NOW,
+    )
+
+    expect(row.needsReview).toBe(true)
+    expect(row.score).toBe(card.score)
+    expect(row.score).toBe(0)
+    expect(row.blocking[0].code).toBe('deadline_expired')
+    expect(report.needsReview).toBe(1)
+  })
+
+  it('средний балл считается по размещениям без нарушений', () => {
+    const report = buildReport(stateWithExpiredAssignment(), NOW)
+    // Нарушенное размещение не тянет средний балл вниз до нуля.
+    expect(report.averageScore).toBe(100)
+  })
+})
+
+describe('счётчик просроченных относится к заявкам без места', () => {
+  it('просроченная, но размещённая заявка не попадает в подпись «без места»', () => {
+    const state: BureauState = {
+      ghosts: [
+        makeGhost({
+          id: 'g-placed-expired',
+          deadline: isoDateOffset(NOW, -5),
+          assignedLocationId: 'loc-a',
+          assignmentSource: 'auto',
+          status: 'assigned',
+        }),
+        makeGhost({ id: 'g-unplaced-expired', deadline: isoDateOffset(NOW, -2) }),
+        makeGhost({ id: 'g-unplaced-fresh' }),
+      ],
+      locations: [makeLocation({ id: 'loc-a', capacity: 2, currentOccupancy: 1 })],
+    }
+
+    const report = buildReport(state, NOW)
+
+    expect(report.overdueTotal).toBe(2)
+    expect(report.overdueUnplaced).toBe(1)
+  })
+})
+
+describe('след решения сохраняется вместе с назначением', () => {
+  it('ручной выбор запоминает, что рекомендовала система', () => {
+    const state: BureauState = {
+      ghosts: [makeGhost({ id: 'g-1', preferredTemperature: 12 })],
+      locations: [
+        makeLocation({ id: 'loc-good', temperature: 12 }),
+        makeLocation({ id: 'loc-poor', temperature: 24 }),
+      ],
+    }
+
+    const outcome = assign(state, 'g-1', 'loc-poor', NOW, { source: 'manual', confirmed: true })
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+
+    const record = findGhost(outcome.state, 'g-1')!.assignmentRecord!
+    expect(record.source).toBe('manual')
+    expect(record.recommendedLocationId).toBe('loc-good')
+    expect(record.recommendedScore).toBe(100)
+    expect(record.score).toBeLessThan(record.recommendedScore)
+    expect(record.warnings.some((warning) => warning.code === 'worse_than_recommended')).toBe(true)
+  })
+
+  it('освобождение места стирает след решения', () => {
+    const state: BureauState = {
+      ghosts: [makeGhost({ id: 'g-1' })],
+      locations: [makeLocation({ id: 'loc-a' })],
+    }
+    const assigned = assign(state, 'g-1', 'loc-a', NOW, { source: 'auto', confirmed: true })
+    expect(assigned.ok).toBe(true)
+    if (!assigned.ok) return
+
+    const outcome = assign(assigned.state, 'g-1', 'loc-a', NOW, { source: 'auto', confirmed: true })
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(findGhost(outcome.state, 'g-1')!.assignmentRecord).not.toBeNull()
+  })
+})
+
+describe('разбор «места нет» не повторяет общую причину', () => {
+  it('причина, блокирующая все места, выносится в корень и убирается из вариантов', () => {
+    const ghost = makeGhost({ id: 'g-1', deadline: isoDateOffset(NOW, -3) })
+    const locations = [
+      makeLocation({ id: 'loc-clean' }),
+      makeLocation({ id: 'loc-mirrors', hasMirrors: true }),
+      makeLocation({ id: 'loc-full', capacity: 1, currentOccupancy: 1 }),
+    ]
+
+    const { sharedBlockers, alternatives } = explainNoMatch(ghost, locations, NOW)
+
+    expect(sharedBlockers.map((conflict) => conflict.code)).toEqual(['deadline_expired'])
+    for (const alternative of alternatives) {
+      expect(alternative.conflicts.some((conflict) => conflict.code === 'deadline_expired')).toBe(
+        false,
+      )
+    }
+    // Первым идёт вариант, которому мешает только общая причина.
+    expect(alternatives[0].locationId).toBe('loc-clean')
+    expect(alternatives[0].conflicts.filter((c) => c.severity === 'blocking')).toHaveLength(0)
+  })
+
+  it('когда общей причины нет, варианты сохраняют свои конфликты', () => {
+    const ghost = makeGhost({ id: 'g-1', specialConditions: [{ kind: 'requires_attic' }] })
+    const locations = [
+      makeLocation({ id: 'loc-a', hasAttic: false }),
+      makeLocation({ id: 'loc-b', hasAttic: true, capacity: 1, currentOccupancy: 1 }),
+    ]
+
+    const { sharedBlockers, alternatives } = explainNoMatch(ghost, locations, NOW)
+    expect(sharedBlockers).toEqual([])
+    expect(alternatives.every((alt) => alt.conflicts.length > 0)).toBe(true)
+  })
+})
+
+describe('демонстрационный набор после исправлений', () => {
+  it('распределение сохраняет прежний результат и различает причины отказа', () => {
+    const { state, entries } = assignAll(createDemoState(NOW), NOW)
+    const report = buildReport(state, NOW)
+
+    expect(report.assigned).toBe(6)
+    expect(report.assignedAuto).toBe(6)
+    expect(report.averageScore).toBe(92)
+    expect(report.needsReview).toBe(0)
+
+    // Обе неразмещённые заявки упираются в условия, а не в нехватку мест.
+    expect(report.unassignable).toBe(2)
+    expect(report.awaitingCapacity).toBe(0)
+    expect(
+      entries.filter((entry) => entry.unplacedReason === 'unassignable').map((e) => e.ghostId).sort(),
+    ).toEqual(['g-kalcifer', 'g-marfa'])
+  })
+})

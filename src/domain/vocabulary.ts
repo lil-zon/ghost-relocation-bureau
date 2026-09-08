@@ -1,5 +1,7 @@
 import type {
+  AssignmentSource,
   ConflictCode,
+  GhostStatus,
   LightingLevel,
   LocationRestriction,
   LocationType,
@@ -101,4 +103,24 @@ export const conflictCodeLabel: Record<ConflictCode, string> = {
   deadline_soon: 'срок близко',
   temperature_far: 'температура далека от желаемой',
   worse_than_recommended: 'хуже рекомендации',
+}
+
+export const assignmentSourceLabel: Record<AssignmentSource, string> = {
+  auto: 'выбрано системой',
+  accepted: 'рекомендация принята оператором',
+  manual: 'выбрано оператором',
+}
+
+/** Короткая форма источника решения для таблиц. */
+export const assignmentSourceShortLabel: Record<AssignmentSource, string> = {
+  auto: 'система',
+  accepted: 'принято',
+  manual: 'оператор',
+}
+
+export const ghostStatusLabel: Record<GhostStatus, string> = {
+  pending: 'ожидает решения',
+  assigned: 'размещена',
+  awaiting_capacity: 'ждёт свободного места',
+  unassignable: 'переселение невозможно',
 }

@@ -54,7 +54,8 @@ describe('итоговая сводка', () => {
     expect(report.assigned).toBe(6)
     expect(report.assignedAuto).toBe(6)
     expect(report.unassignable).toBe(2)
-    expect(report.overdue).toBe(1)
+    expect(report.overdueTotal).toBe(1)
+    expect(report.overdueUnplaced).toBe(1)
     expect(report.averageScore).not.toBeNull()
     expect(report.averageScore!).toBeGreaterThan(50)
 

@@ -1,18 +1,32 @@
+import { blockingOnly } from '../domain/constraints'
 import { formatDeadline, isOverdue } from '../domain/dates'
-import type { BureauState, GhostRequest } from '../domain/types'
+import { explainExistingAssignment } from '../domain/matching'
+import type { BureauState, GhostRequest, RelocationLocation } from '../domain/types'
 import { describeCondition } from '../domain/vocabulary'
 import { Badge } from './components/primitives'
 
-function statusBadge(ghost: GhostRequest, locationName: string | null, now: Date) {
-  if (ghost.status === 'assigned' && locationName) {
+/**
+ * Статус в списке отражает фактическое положение дел, а не только сохранённое
+ * поле: размещение, переставшее проходить обязательные условия, помечается
+ * отдельно — иначе список показывал бы его как благополучное.
+ */
+function statusBadge(ghost: GhostRequest, location: RelocationLocation | null, now: Date) {
+  if (ghost.assignedLocationId !== null && location) {
+    const blocking = blockingOnly(explainExistingAssignment(ghost, location, now).conflicts)
+    if (blocking.length > 0) {
+      return <Badge tone="danger">{location.name} · требует пересмотра</Badge>
+    }
     return (
       <Badge tone="ok">
-        {locationName}
-        {ghost.assignmentSource === 'manual' ? ' · вручную' : ''}
+        {location.name}
+        {ghost.assignmentSource === 'manual' ? ' · оператор' : ''}
+        {ghost.assignmentSource === 'accepted' ? ' · принято' : ''}
       </Badge>
     )
   }
+
   if (ghost.status === 'unassignable') return <Badge tone="danger">переселение невозможно</Badge>
+  if (ghost.status === 'awaiting_capacity') return <Badge tone="warn">ждёт свободного места</Badge>
   if (isOverdue(ghost.deadline, now)) return <Badge tone="danger">срок истёк</Badge>
   return <Badge>ожидает решения</Badge>
 }
@@ -28,8 +42,8 @@ export function GhostList({
   selectedGhostId: string | null
   onSelect: (ghostId: string) => void
 }) {
-  const locationName = (id: string | null) =>
-    id === null ? null : (bureau.locations.find((location) => location.id === id)?.name ?? null)
+  const locationOf = (id: string | null) =>
+    id === null ? null : (bureau.locations.find((location) => location.id === id) ?? null)
 
   return (
     <ul className="space-y-1.5">
@@ -56,7 +70,7 @@ export function GhostList({
               </div>
 
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                {statusBadge(ghost, locationName(ghost.assignedLocationId), now)}
+                {statusBadge(ghost, locationOf(ghost.assignedLocationId), now)}
                 <Badge tone={overdue ? 'danger' : 'neutral'}>
                   {formatDeadline(ghost.deadline, now)}
                 </Badge>

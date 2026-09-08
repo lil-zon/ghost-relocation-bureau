@@ -80,7 +80,7 @@ describe('глобальное распределение', () => {
     expect(findGhost(next, 'g-easy')!.assignedLocationId).toBe('loc-plain')
   })
 
-  it('вместимость не превышается: лишние заявки помечаются как неразрешимые', () => {
+  it('вместимость не превышается: лишние заявки ждут освобождения места', () => {
     const state: BureauState = {
       ghosts: [
         makeGhost({ id: 'g-1' }),
@@ -94,7 +94,9 @@ describe('глобальное распределение', () => {
 
     expect(findLocation(next, 'loc-one')!.currentOccupancy).toBe(1)
     expect(next.ghosts.filter((ghost) => ghost.assignedLocationId !== null)).toHaveLength(1)
-    expect(next.ghosts.filter((ghost) => ghost.status === 'unassignable')).toHaveLength(2)
+    // Место подходит и мешает только занятость — это не «переселение невозможно».
+    expect(next.ghosts.filter((ghost) => ghost.status === 'awaiting_capacity')).toHaveLength(2)
+    expect(next.ghosts.filter((ghost) => ghost.status === 'unassignable')).toHaveLength(0)
     expect(() => assertCapacityInvariant(next)).not.toThrow()
   })
 
@@ -145,8 +147,8 @@ describe('распределение демонстрационного набо
 
     const entry = entries.find((item) => item.ghostId === 'g-kalcifer')!
     expect(entry.match).toBeNull()
-    expect(entry.alternatives.length).toBeGreaterThan(0)
-    expect(entry.alternatives.every((alt) => alt.conflicts.some((c) => c.severity === 'blocking'))).toBe(true)
+    expect(entry.unplacedReason).toBe('unassignable')
+    expect(entry.explanation!.alternatives.length).toBeGreaterThan(0)
   })
 
   it('просроченная заявка не занимает место', () => {

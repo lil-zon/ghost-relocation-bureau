@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { STORAGE_KEY } from '../state/persistence'
 
 interface Props {
   children: ReactNode
@@ -61,7 +62,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <button
               type="button"
               onClick={() => {
-                window.localStorage.removeItem('ghost-relocation-bureau')
+                window.localStorage.removeItem(STORAGE_KEY)
                 window.location.reload()
               }}
               className="rounded border border-danger/50 bg-danger/10 px-3 py-1.5 text-[13px] text-danger"

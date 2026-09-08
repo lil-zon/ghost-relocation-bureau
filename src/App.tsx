@@ -26,6 +26,7 @@ const noticeStyles: Record<NoticeKind, string> = {
 export function App() {
   const { state, dispatch } = useStore()
   const [tab, setTab] = useState<TabId>('requests')
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const pending = state.bureau.ghosts.filter(
     (ghost) => ghost.assignedLocationId === null && ghost.status !== 'unassignable',
@@ -54,23 +55,45 @@ export function App() {
               Распределить автоматически
             </Button>
             <Button onClick={() => dispatch({ type: 'load_demo' })}>Демо-данные</Button>
-            <Button
-              variant="ghost"
-              onClick={() => dispatch({ type: 'clear_requests' })}
-              title="Очистить реестр заявок"
-            >
-              Очистить
-            </Button>
+            {confirmClear ? (
+              <>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    dispatch({ type: 'clear_requests' })
+                    setConfirmClear(false)
+                  }}
+                  title="Все заявки и их размещения будут удалены"
+                >
+                  Удалить все заявки
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirmClear(false)}>
+                  Отмена
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmClear(true)}
+                title="Очистить реестр заявок"
+              >
+                Очистить
+              </Button>
+            )}
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-[1400px] gap-1 px-5">
+        <nav className="mx-auto flex max-w-[1400px] gap-1 px-5" role="tablist" aria-label="Разделы бюро">
           {TABS.map((item) => (
             <button
               key={item.id}
               type="button"
+              role="tab"
+              id={`tab-${item.id}`}
+              aria-controls={`panel-${item.id}`}
+              aria-selected={tab === item.id}
+              tabIndex={tab === item.id ? 0 : -1}
               onClick={() => setTab(item.id)}
-              aria-current={tab === item.id ? 'page' : undefined}
               className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
                 tab === item.id
                   ? 'border-accent text-ink'
@@ -101,10 +124,12 @@ export function App() {
           </div>
         )}
 
-        {tab === 'requests' && <RequestsView state={state} dispatch={dispatch} />}
-        {tab === 'locations' && <LocationsView state={state} />}
-        {tab === 'report' && <ReportView state={state} />}
-        {tab === 'worklog' && <WorklogView />}
+        <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+          {tab === 'requests' && <RequestsView state={state} dispatch={dispatch} />}
+          {tab === 'locations' && <LocationsView state={state} />}
+          {tab === 'report' && <ReportView state={state} />}
+          {tab === 'worklog' && <WorklogView />}
+        </div>
       </main>
     </div>
   )

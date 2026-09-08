@@ -1,7 +1,14 @@
-import { detectBlockingConflicts, freeSlots, isFull } from './constraints'
+import { blockingOnly, detectBlockingConflicts, freeSlots, isFull } from './constraints'
 import { isOverdue } from './dates'
-import { scoreLocation } from './scoring'
-import type { BureauState, ConflictCode, GhostRequest, RelocationLocation } from './types'
+import { explainExistingAssignment } from './matching'
+import type {
+  AssignmentSource,
+  BureauState,
+  Conflict,
+  ConflictCode,
+  GhostRequest,
+  RelocationLocation,
+} from './types'
 import { conflictCodeLabel } from './vocabulary'
 
 export interface LocationUsage {
@@ -28,18 +35,30 @@ export interface AssignedRow {
   locationId: string
   locationName: string
   score: number
-  source: 'auto' | 'manual'
+  source: AssignmentSource
+  /** Размещение перестало соответствовать правилам — например, истёк срок. */
+  needsReview: boolean
+  blocking: Conflict[]
 }
 
 export interface BureauReport {
   total: number
   assigned: number
   assignedAuto: number
+  assignedAccepted: number
   assignedManual: number
+  /** Размещения, которые больше не проходят обязательные условия. */
+  needsReview: number
+  /** Подходящее место есть, но занято. */
+  awaitingCapacity: number
+  /** Подходящего места не существует. */
   unassignable: number
   pending: number
-  overdue: number
-  /** Средний балл размещённых заявок; null, если размещённых нет. */
+  /** Просроченные заявки во всём реестре. */
+  overdueTotal: number
+  /** Просроченные среди тех, у кого нет места, — именно это подписывает плитку «без места». */
+  overdueUnplaced: number
+  /** Средний балл размещений без блокирующих конфликтов; null, если таких нет. */
   averageScore: number | null
   totalCapacity: number
   totalOccupancy: number
@@ -91,40 +110,50 @@ export function buildReport(state: BureauState, now: Date): BureauReport {
   const assignedGhosts = state.ghosts.filter((ghost) => ghost.assignedLocationId !== null)
   const unplaced = state.ghosts.filter((ghost) => ghost.assignedLocationId === null)
 
+  // Тот же расчёт, что показывает карточка заявки: сводка и деталь не могут разойтись.
   const assignedRows: AssignedRow[] = assignedGhosts.flatMap((ghost) => {
     const location = byLocationId.get(ghost.assignedLocationId as string)
     if (!location) return []
+    const match = explainExistingAssignment(ghost, location, now)
+    const blocking = blockingOnly(match.conflicts)
     return [
       {
         ghostId: ghost.id,
         ghostName: ghost.name,
         locationId: location.id,
         locationName: location.name,
-        score: scoreLocation(ghost, location).total,
+        score: match.score,
         source: ghost.assignmentSource ?? 'auto',
+        needsReview: blocking.length > 0,
+        blocking,
       },
     ]
   })
 
+  const healthy = assignedRows.filter((row) => !row.needsReview)
   const averageScore =
-    assignedRows.length === 0
+    healthy.length === 0
       ? null
-      : Math.round(
-          assignedRows.reduce((sum, row) => sum + row.score, 0) / assignedRows.length,
-        )
+      : Math.round(healthy.reduce((sum, row) => sum + row.score, 0) / healthy.length)
 
   const locations = state.locations.map(locationUsage)
+  const countSource = (source: AssignmentSource) =>
+    assignedGhosts.filter((ghost) => ghost.assignmentSource === source).length
 
   return {
     total: state.ghosts.length,
     assigned: assignedGhosts.length,
-    assignedAuto: assignedGhosts.filter((ghost) => ghost.assignmentSource === 'auto').length,
-    assignedManual: assignedGhosts.filter((ghost) => ghost.assignmentSource === 'manual').length,
+    assignedAuto: countSource('auto'),
+    assignedAccepted: countSource('accepted'),
+    assignedManual: countSource('manual'),
+    needsReview: assignedRows.filter((row) => row.needsReview).length,
+    awaitingCapacity: state.ghosts.filter((ghost) => ghost.status === 'awaiting_capacity').length,
     unassignable: state.ghosts.filter((ghost) => ghost.status === 'unassignable').length,
     pending: state.ghosts.filter(
       (ghost) => ghost.status === 'pending' && ghost.assignedLocationId === null,
     ).length,
-    overdue: state.ghosts.filter((ghost) => isOverdue(ghost.deadline, now)).length,
+    overdueTotal: state.ghosts.filter((ghost) => isOverdue(ghost.deadline, now)).length,
+    overdueUnplaced: unplaced.filter((ghost) => isOverdue(ghost.deadline, now)).length,
     averageScore,
     totalCapacity: locations.reduce((sum, item) => sum + item.capacity, 0),
     totalOccupancy: locations.reduce((sum, item) => sum + item.occupancy, 0),

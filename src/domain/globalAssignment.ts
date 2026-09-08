@@ -1,15 +1,17 @@
-import { assign, markUnassignable, unassign } from './assignment'
-import { closestAlternatives, findBestMatch } from './matching'
+import { assign, markUnplaced, unassign } from './assignment'
+import { classifyUnplaced, explainNoMatch, findBestMatch, type NoMatchExplanation } from './matching'
 import { sortByPriority, type GhostPriority } from './priority'
 import type { BureauState, MatchResult } from './types'
 
 export interface GlobalAssignmentEntry {
   ghostId: string
   priority: GhostPriority
-  /** Назначенное место или null, если подходящего места не нашлось. */
+  /** Назначенное место или null, если места не нашлось. */
   match: MatchResult | null
-  /** Ближайшие непригодные варианты — показываются, когда переселение невозможно. */
-  alternatives: MatchResult[]
+  /** Почему места не нашлось; null, если заявка размещена. */
+  unplacedReason: 'awaiting_capacity' | 'unassignable' | null
+  /** Разбор ситуации «места нет»: корневые причины и ближайшие варианты. */
+  explanation: NoMatchExplanation | null
   /** Заявка не участвовала в распределении: место закреплено оператором вручную. */
   skippedManual: boolean
 }
@@ -26,21 +28,24 @@ export interface GlobalAssignmentResult {
  * обнаружить переполнение. Поэтому места занимаются последовательно, и после
  * каждого назначения следующая заявка видит уже изменившуюся вместимость.
  *
- * Ручные назначения оператора считаются решением человека и сохраняются:
- * пересчитываются только автоматические.
+ * Пересчитываются решения системы — как принятые ею самой (`auto`), так и
+ * подтверждённые оператором (`accepted`): место в обоих случаях выбрала система.
+ * Нетронутыми остаются только собственные решения оператора (`manual`).
  */
 export function assignAll(state: BureauState, now: Date): GlobalAssignmentResult {
-  // 1. Освобождаем места, занятые предыдущим автоматическим прогоном.
+  // 1. Освобождаем места, занятые по решению системы на прошлом прогоне.
   let working: BureauState = state
   for (const ghost of state.ghosts) {
-    if (ghost.assignmentSource === 'auto') {
+    if (ghost.assignmentSource === 'auto' || ghost.assignmentSource === 'accepted') {
       working = unassign(working, ghost.id)
     }
   }
   working = {
     ...working,
     ghosts: working.ghosts.map((ghost) =>
-      ghost.status === 'unassignable' ? { ...ghost, status: 'pending' } : ghost,
+      ghost.status === 'unassignable' || ghost.status === 'awaiting_capacity'
+        ? { ...ghost, status: 'pending' }
+        : ghost,
     ),
   }
 
@@ -53,20 +58,27 @@ export function assignAll(state: BureauState, now: Date): GlobalAssignmentResult
 
   const entries: GlobalAssignmentEntry[] = []
 
+  function recordFailure(ghostId: string, priority: GhostPriority): void {
+    const current = working.ghosts.find((item) => item.id === ghostId)!
+    const reason = classifyUnplaced(current, working.locations, now)
+    working = markUnplaced(working, ghostId, reason)
+    entries.push({
+      ghostId,
+      priority,
+      match: null,
+      unplacedReason: reason,
+      explanation: explainNoMatch(current, working.locations, now),
+      skippedManual: false,
+    })
+  }
+
   for (const { ghost, priority } of ordered) {
     // 3. Каждая следующая заявка видит актуальную занятость мест.
     const current = working.ghosts.find((item) => item.id === ghost.id)!
     const best = findBestMatch(current, working.locations, now)
 
     if (!best) {
-      working = markUnassignable(working, ghost.id)
-      entries.push({
-        ghostId: ghost.id,
-        priority,
-        match: null,
-        alternatives: closestAlternatives(current, working.locations, now),
-        skippedManual: false,
-      })
+      recordFailure(ghost.id, priority)
       continue
     }
 
@@ -79,14 +91,7 @@ export function assignAll(state: BureauState, now: Date): GlobalAssignmentResult
 
     if (!outcome.ok) {
       // Доменный слой отклонил назначение — трактуем как «места нет».
-      working = markUnassignable(working, ghost.id)
-      entries.push({
-        ghostId: ghost.id,
-        priority,
-        match: null,
-        alternatives: closestAlternatives(current, working.locations, now),
-        skippedManual: false,
-      })
+      recordFailure(ghost.id, priority)
       continue
     }
 
@@ -95,7 +100,8 @@ export function assignAll(state: BureauState, now: Date): GlobalAssignmentResult
       ghostId: ghost.id,
       priority,
       match: best,
-      alternatives: [],
+      unplacedReason: null,
+      explanation: null,
       skippedManual: false,
     })
   }
@@ -105,7 +111,8 @@ export function assignAll(state: BureauState, now: Date): GlobalAssignmentResult
       ghostId: ghost.id,
       priority: sortByPriority([ghost], working.locations, now)[0].priority,
       match: null,
-      alternatives: [],
+      unplacedReason: null,
+      explanation: null,
       skippedManual: true,
     })
   }
